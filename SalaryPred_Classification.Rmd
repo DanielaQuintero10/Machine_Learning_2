@@ -7,24 +7,1164 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+set.seed(101195)
+#For running markdown, please excude scrips below:
+source("scripts/01_dataInspection.R", local = knitr::knit_global())
+source("scripts/02_dataTranformation.R", local = knitr::knit_global())
+source("scripts/03_dataSplit.R", local = knitr::knit_global())
+#source("scripts/04_RandomForest.R", local = knitr::knit_global())
+#source("scripts/05_NN.R", local = knitr::knit_global())
+#source("scripts/06_KNN.R", local = knitr::knit_global())
+#source("scripts/07_Comparison.R", local = knitr::knit_global())
+#### Function from ML2 class, Prof Sakowski:
+getAccuracyAndGini <- function(model, 
+                               data, 
+                               target_variable = "salary_binary",
+                               predicted_class = "1") {
+  
+  # funkcja dla modelu zapisanego jako wynik 
+  # funkcji train() obliczy 
+  # accuracy, specificity, sensitivity i Gini = 2 * AUC - 1
+  
+  require(pROC)
+  data <- data %>% as.data.frame()
+  
+  # wygeneruj prawdopodobieństwa poziomu "predicted_class"
+  forecasts_p <- predict(model, data,
+                         type = "prob")[, predicted_class]
+  
+  # i samą przewidywaną kategorię
+  if (any(class(model) == "train")) {
+    forecasts_c <- predict(model, data) 
+  } else forecasts_c <- predict(model, data, type = "class")
+  
+  # wartości rzeczywiste - pull() zamienia obiekt tibble w wektor
+  real <- data[, target_variable]
+  
+  # pole pod wykresem ROC
+  AUC <- roc(predictor = forecasts_p,
+             response = (real == predicted_class),
+             quiet = T)
+  
+  # tabela klasyfikacji i miary na niej oparte
+  table <- confusionMatrix(forecasts_c,
+                           real,
+                           predicted_class) 
+  # zbieramy w ostateczny wynik
+  result <- c(table$overall[1], # cccuracy
+              table$byClass[1:2], # sens, spec
+              Gini = 2 * AUC$auc - 1)
+  
+  return(result)
+  
+}
 ```
 
-## R Markdown
+## About the project
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+Our project aims to solve a classification problem: predict if the salary of certain individuals will be higher than 50k ("Positive" = 2) a year or not ("Negative" = 1). We will compare 3 machine learning algorithms: Random Forest, Neural Networks and XGBoost.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+## About the data-set
 
-```{r cars}
-summary(cars)
+The original data-set was found from Kaggle, although it was directly sourced and cited from <https://archive.ics.uci.edu/ml/datasets/Census+Income>
+
+The data-set used for the project has been modified: values of target variable and predictors have been shifted/rescaled, additional predictors have been added (some of them correlated with the target, some of them not), additional rows have been added, some rows have been deleted, etc.
+
+### Data description
+
+| Variable           | Description                                                                   | Values                                                                                                                                                                                                                       |
+|--------------|------------------------------|-------------------------------------|
+| `id`               | Unique row identifies                                                         | From 1 to 42561                                                                                                                                                                                                              |
+| `age`              | Age of the person                                                             | From 17 to 90                                                                                                                                                                                                                |
+| `capital.gain`     | Yearly capital gains                                                          | From 0 to 99999                                                                                                                                                                                                              |
+| `capital.loss`     | Yearly capital losses                                                         | From 0 to 4356                                                                                                                                                                                                               |
+| `education`        | Level of education reached by the person. Total of 16 levels.                 | 11th, Bachelors, Some-college, HS-grad, Masters, 7th-8th, Assoc-voc, 1st-4th, 5th-6th, Assoc-acdm, Doctorate, 9th, 12th, 10th, Preschool, Prof-school                                                                        |
+| `education.num`    | Numeric education variable representing the `education` level selected above. | From 1 to 16                                                                                                                                                                                                                 |
+| `feat01 to feat10` | Engineered features representing relationships/ratios in the data.            | Depending on the variable, 0 to 1 or 0 to 2.                                                                                                                                                                                 |
+| `fnlwgt`           | Final weight                                                                  | From 12285 to 1484705                                                                                                                                                                                                        |
+| `hours.per.week`   | Weekly working hours                                                          | From 1 to 99                                                                                                                                                                                                                 |
+| `marital.status`   | Marital/civil status, 7 levels.                                               | Married-civ-spouse, Divorced, Separated, Never-married, Widowed, Married-spouse-absent, Married-AF-spouse.                                                                                                                   |
+| `native.country`   | Country where the person is from.                                             | 42 countries in total.                                                                                                                                                                                                       |
+| `occupation`       | Job position, 15 levels                                                       | Transport-moving, Adm-clerical, Tech-support, Craft-repair, Prof-specialty, Sales, Exec-managerial, ?, Machine-op-inspct, Other-service, Protective-serv, Handlers-cleaners, Farming-fishing, Priv-house-serv, Armed-forces. |
+| `race`             | Ethnicity/Race                                                                | Whitem Asian-Pac-Islander, Black, Amer-Indian-Eskimo, Other.                                                                                                                                                                 |
+| `relationship`     | Related to the civil status (`marital.status`)                                | Husband, Wife, Unmarried, Not-in-family, Other-relative, Own-child.                                                                                                                                                          |
+| `salary`           | Variable to predict. Whether a person earns more than 50k yearly or not.      | Greater than 50k "\>50k" or smaller or equal to "\<=50k"                                                                                                                                                                     |
+| `sex`              | Gender of the person                                                          | values are either 'Male' or 'Female'                                                                                                                                                                                         |
+| `workclass`        | 9 levels                                                                      | Private, Self-emp-not-inc, Local-gov, State-gov, Federal-gov, Self-emp-inc, without-pay, Never-worked                                                                                                                        |
+
+For the purposes of rendering, we will put the codes used but we will not run them in our markdown file. Instead, we will use the previously saved results and variables. This project is fully available on gitHub, where you can check all the scripts and data set used in case you would like to replicate our project. Comments, suggestions and improvements are always welcome in GitHub :)
+
+Link to gh \<\>
+
+## Data Exploration
+
+Before applying any changes into the data, it is important to understand it's distribution and what story can it tell us by itself. It is crucial to have an understanding of the data set to identify potential outliers, biases or over/under sampling, for example.
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(scales)
+library(gridExtra)
 ```
 
-## Including Plots
+Distribution of Gender and Salary
 
-You can also embed plots, for example:
+```{r, warning=FALSE}
+bar_plot_combined <- ggplot(data, aes(x = sex, fill = salary)) +
+  geom_bar(position = "stack") +  # Use position = "stack" to stack bars
+  labs(title = "Distribution of Gender and Salary") +
+  facet_grid(scales = "free_y") +  # Facet by gender with free y-axis scales
+  theme(axis.text.x = element_blank())  # Remove x-axis labels for better presentation
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# Show the percentage labels on top of the bars
+gender_salary <- bar_plot_combined + geom_text(aes(label = sprintf("%.1f%%", ..count../sum(..count..)*100)),
+                                                   position = position_stack(vjust = 0.5),
+                                                   stat = "count", color = "white")
+print(gender_salary)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Our data shows significantly higher number of men, but also higher salaries for them. While 20% of the men earn more than 50k, only 3.6% of the women earn more than 50K.
+
+But overall, we can also see that our data contains more population that earns less than 50k:
+
+```{r, warning=FALSE}
+if (0) {
+  bar_plot_salary <- ggplot(data, aes(x = salary, fill = salary)) +
+  geom_bar(position = "stack") +
+  labs(title = "Distribution of Salary in the Data") +
+  theme(axis.text.x = element_blank()) +
+  geom_text(stat = "count", aes(label = sprintf("%.1f%%", after_stat(count/sum(count)*100))),
+            color = "black")
+}
+print(bar_plot_salary)
+```
+
+Now let's check how is the country distribution:
+
+```{r, warning=FALSE}
+if (0) {
+  country_counts <- table(data$native.country)
+country_percentages <- prop.table(country_counts) * 100
+df <- data.frame(country = names(country_percentages), percentage = country_percentages)
+df <- df[order(-df$percentage.Freq), ]
+}
+print (df)
+```
+
+Almost 90% of our data is from the United States; this is relevant as probably the currency unit taken to collect the data was in USD, biasing a little the results, as countries with weaker currencies might look like they are earning 'low' wages, but maybe, due to their country's economical situation, is, in fact, a salary that gives the same or more acquisition power and quality of life than in the U.S with 50k yearly.
+
+Distribution of salary by country:
+
+```{r}
+if (0){
+  country_salary <- ggplot(data, aes(x = native.country, fill = salary)) +
+  geom_bar(position = "fill") +
+  labs(title = "Distribution of Salary by Native Country") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+print(country_salary)
+```
+
+The distribution of salaries is quite different per country either because of the economical situation or the economical situation of each individual in the dataset. We could expect that the more developed the country, the higher the population with a high yearly salary. In our data-set it varies.
+
+Now that we know about demographics and country, let's check how's the distribution by occupation and education:
+
+```{r}
+if (0) {
+  ggplot(data, aes(x = salary, fill = occupation)) +
+  geom_bar(position = "stack") +
+  labs(title = "Occupation's frequency in salary") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+bar_plot_combined2 <- ggplot(data, aes(x = occupation, fill = salary)) +
+  geom_bar(position = "stack") +
+  labs(title = "Distribution of Occupation and Salary") +
+  facet_grid(scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+Salary_job <- bar_plot_combined2 + geom_text(aes(label = sprintf("%.1f%%", ..count../sum(..count..)*100)),
+                              position = position_stack(vjust = 0.5),
+                              stat = "count", color = "black")
+}
+print(Salary_job)
+```
+
+```{r}
+if(0) {
+  salary_educ <- ggplot(data, aes(x = education, fill = salary)) +
+  geom_bar(position = "fill") +
+  labs(title = "Distribution of education and salary") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+print(salary_educ)
+```
+
+Our data is aligned with the principle that the more studies you have, the higher chances of having a higher salary, being the highest the people with post-graduate studies.
+
+We can also plot the working hours distribution:
+
+```{r}
+if (0) {
+  wh <- ggplot(data, aes(x = hours.per.week, fill = salary)) +
+  geom_bar(position = "stack") +
+  labs(title = "Distribution of working hours and salary") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+print(wh)
+```
+
+Most people work between 40 to 50 ours weekly.
+
+Distribution of age:
+
+```{r}
+if (0) {
+  age <- ggplot(data, aes(x = age, fill = salary)) +
+  geom_bar(position = "stack") +
+  labs(title = "Distribution of age and salary") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+print(age)
+```
+
+The older you are the higher chances to have better salary :)
+
+```{r}
+if (0) {
+  hist_age <- ggplot(data, aes(x = age)) +
+  geom_histogram(binwidth = 5, fill = "blue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Age Variable",
+       x = "Age",
+       y = "Frequency") +
+  theme_minimal()
+}
+print(hist_age)
+
+```
+
+Additionally, let's check if there could be a bias by race, as we already know that the data gathered could also bias our model in terms of gender:
+
+```{r}
+if (0) {
+  p <- ggplot(data, aes(x = race, fill = salary)) +
+  geom_bar(position = "stack" ) +
+  labs(title = "Distribution of Race by Salary") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# Show the percentage labels on top of the bars
+race <- p + geom_text(aes(label = sprintf("%.1f%%", ..count../sum(..count..)*100)),
+                               position = position_stack(vjust = 0.5),
+                               stat = "count", color = "black")
+
+
+salary_race <- ggplot(data, aes(x = salary, fill = race)) +
+  geom_bar(position = "fill") +
+  labs(title = "Distribution of Salary by Race") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+print(salary_race)
+```
+
+Most of our data is about white race, which might be a dominant race in some of the countries and probably also in the U.S.
+
+Overall, we could see that before modeling we need to improve some aspects in our data, which we will describe below.
+
+### Data Cleaning
+
+We take an overall look at the data structure:
+
+```{r}
+str(read.csv("data/c3.csv"))
+```
+
+Together with the summary:
+
+```{r}
+summary(read.csv("data/c3.csv"))
+```
+
+We can see already that our data needs proper categorization; which will require changing some variables from `character` to `factor` , scaling, binning and removing unnecessary columns.
+
+#### '?' in the data
+
+Some categories in the data are question marks '?'. For the purpose of the project, we will rename them to 'other':
+
+```{r}
+if (0) {
+  data <- data %>%
+  mutate_all(~ ifelse(. == '?', 'other', .))
+}
+```
+
+#### Binning or bucketing
+
+This is the process of changing a continuous variable into groups or ranges, which we will apply to variable `age`, slightly to variable `educ_levels` and `hours_week`.
+
+```{r}
+if (0) {
+  # Age as categorical variabel
+data <- data %>%
+  mutate(age_group = ((age - 15) %/% 5) + 1)
+data$age_group <- as.factor(data$age_group)
+str(data)
+data <- data %>% select(-age)
+# labels
+data$age_group <- factor(data$age_group, levels = 1:16, labels = c("15-19 years", "20-24 years",
+                                                                   "25-29 years", "30-34 years",
+                                                                   "35-39 years", "40-44 years",
+                                                                   "45-49 years", "50-54 years",
+                                                                   "55-59 years", "60-64 years",
+                                                                   "65-69 years", "70-74 years",
+                                                                   "75-79 years", "80-84 years",
+                                                                   "85-89 years", "90-94 years"
+                                                                   ))
+}
+
+```
+
+And now, we will group better the education levels to improve the representation of them as some are redundant to each other. We will end up with levels describing if the person has:
+
+-   No Primary School : `no-PS`
+
+-   No Secondary School : `no-SS`
+
+-   No High School : `no-HS`
+
+-   Finished High School : `HS-grad`
+
+-   Not finished college : `Some-college`
+
+-   An Associate degree (either Vocacional or Academic) : `Assoc-degree`
+
+-   Bachelor's degree : `Bachelors`
+
+-   Master degree : `Master`
+
+-   Post-Graduate studies (either Doctorare or Prof-school) : `Post-grad`
+
+```{r}
+if (0) {
+  data <- data %>%
+  mutate(educ_levels = case_when(
+    education.num %in% c(1, 2) ~ 1,
+    education.num %in% c(3, 4) ~ 2,
+    education.num %in% c(5, 6, 7, 8) ~ 3,
+    education.num %in% c(9) ~ 4,
+    education.num %in% c(10) ~ 5,
+    education.num %in% c(11, 12) ~ 6,
+    education.num %in% c(13) ~ 7,
+    education.num %in% c(14) ~ 8,
+    education.num %in% c(15, 16) ~ 9,
+    TRUE ~ NA_integer_
+  ))
+data$educ_levels <- as.factor(data$educ_levels)
+data <- data %>% select(-education)
+data <- data %>% select(-education.num)
+data$educ_levels <- factor(data$educ_levels, levels = 1:9, labels = c("no-PS", "no-SS", "no-HS", 
+                                                                      "HS-grad", "Some-college", "Assoc-degree",
+                                                                      "Bachelors", "Masters", "Post-grad"))
+
+}
+```
+
+Now, hours worked per week:
+
+```{r}
+if (0) {
+  data <- data %>%
+  mutate(hours_week = case_when(
+    hours.per.week < 35 ~ "less than 35 hours",
+    between(hours.per.week, 35, 50) ~ "between 35 and 50 hours",
+    hours.per.week > 50 ~ "more than 50 hours",
+    TRUE ~ NA_character_
+  ))
+data$hours_week <- as.factor(data$hours_week)
+data <- data %>% select(-hours.per.week)
+}
+```
+
+After finishing with our binning, these variables are correctly classified as factor. Now we need to move on to the other variables.
+
+#### From chr to factor
+
+Next step is to change the chr variables that should be categorical into factor. We will apply this to country, occupation and workclass:
+
+```{r}
+if (0) {
+  # country, occupation,workclass as factor:
+data$native.country <- as.factor(data$native.country)
+data$occupation <- as.factor(data$occupation)
+data$workclass <- as.factor(data$workclass)
+}
+```
+
+#### Target variable: Salary
+
+One last change is changing our target variable `salary` into binary:
+
+```{r}
+if (0) {
+  # Salary needs to be binary variable:
+data1 <- data1 %>%
+  mutate(salary_binary = ifelse(salary == ">50K", 1, 0))
+data1 <- data1 %>% select(-salary)
+
+}
+```
+
+#### Features to remove
+
+It was not lightly decided that we will remove the following features from our model:
+
+`marital.status`, `relationship`, `sex`, `race`
+
+```{r}
+if (0){
+  data1 <- select(data, -marital.status, -relationship, -race, -sex)
+}
+```
+
+The main reason is that, in theory, we wouldn't want salary to be dependent if someone is male or female or married or single or black or white. In reality we know that these biases exist, and probable our models will be able to be more accurate if we include these variables into consideration. But it is 'common' practice to generate biased models just because we live in a biased world.
+
+It is important, and we want to use this project and this publication, to emphasize the ethical and economical impact Data Science and Machine Learning models can have in the world. This is a purely academic exercise, but it doesn't mean that's not important to try to improve reality by generating more fair and reliable knowledge.
+
+A thought to keep in mind along this project: are the models suggesting in measures like Sensitivity, Specificity and Gini coefficient that, according to someone's education level, age (under the assumption that it could also represent experience), workclass and country, they should be earning more than 50k and maybe they are not because of their gender, race or civil status? Or viceversa, is somebody earning more than he/she should just because of their race, gender or civil status?
+
+We believe that by keeping these biases in mind, especially in academic projects, they'll keep our minds even more alert once we apply this knowledge into the world and, maybe, in a not so distant future, these biases will be gone as our models will be predicting fair and unbiased results :)
+
+### Split: Train & Test 
+
+We've decided to split our data before applying the algorithms, this way we use exactly same training and testing set in our models; 80% train and 20% test split.
+
+#### Scaling
+
+Last but not least, we are scaling our numeric variables and saving them in a different variable (and file) as we will need scaling for Neural Networks but not for Random Forest nor XGBoost.
+
+```{r}
+if (0) {
+  # Define columns to exclude from scaling
+exclude_columns <- c("id", "salary_binary")
+
+# Identify numeric columns to scale
+numeric_columns <- sapply(trainr, is.numeric) & !(names(trainr) %in% exclude_columns)
+numeric_columns2 <- sapply(testr, is.numeric) & !(names(testr) %in% exclude_columns)
+
+# Scale numeric columns
+scaled_trainr <- trainr %>%
+  mutate(across(all_of(names(trainr)[numeric_columns]), scale))
+scaled_testr <- testr %>%
+  mutate(across(all_of(names(testr)[numeric_columns2]), scale))
+}
+# View the scaled data
+str(scaled_trainr)
+str(scaled_testr)
+```
+
+## Machine Learning Algorithms
+
+### Random Forest
+
+```{r}
+library(tidyverse)
+library(caret)
+library(pROC)
+library(randomForest)
+library(ranger)
+library(here)
+set.seed(101195)
+```
+
+The analysis began by selecting predictor variables from the training data-set, excluding `id` for its lack of predictive value and the response variable 'salary_binary'; that way we ensure that the model focuses on relevant features that potentially influence salary outcomes.
+
+```{r}
+# We use the cleaned data, without scaling
+train_dataRF <- trainr
+
+## Formula
+response_variable <- "salary_binary"
+predictor_columns <- setdiff(names(train_dataRF), c("id", response_variable))
+(formulaRF <- as.formula(paste(response_variable, "~", paste(predictor_columns, collapse = " + "))))
+```
+
+#### Model 1: RF_model
+
+The initial model was configured with 1,000 trees (**`ntree = 1000`**), chosen to enhance the model's accuracy through a robust ensemble approach. The **`mtry`** parameter was set to the square root of the number of predictors, adhering to a common practice found for classification problems in Random Forest. Bootstrap sampling with replacement was employed, with an initial sample size set to 50% of the training data. This introduces variability among the trees, reducing model variance (but itwas later adjusted to use the full dataset to explore its impact on the model's performance).
+
+```{r}
+if (0) {
+  RF_model <- randomForest(formulaRF, data = train_dataRF, 
+                         ntree = 1000,
+                         mtry = sqrt(ncol(train_dataRF) - 2),
+                         replace = TRUE, 
+                         sampsize = floor(0.5 * nrow(train_dataRF)),
+                         importance = TRUE)
+}
+RF_model <- readRDS(here("output", "RF_model.rds"))
+print(RF_model)
+```
+
+The model's Out-Of-Bag (OOB) estimate of the error rate is 14.13%, which is a strong indicator of its overall predictive performance on unseen data. We can also check the confusion matrix, which provides more details about the model's classification ability:
+
+-   The model correctly predicted 4,271 instances of the '1' class but incorrectly classified 3,938 instances that were actually '1' as '0', resulting in a class error rate of approximately 47.97% for the '1' class. The model struggles more with accurately predicting instances belonging to the '1' class (a.k.a more than 50k yearly).
+
+-   For the '0' class, the model showed a much better performance, with 24,966 correct predictions and 874 misclassifications. The error rate for the '0' class is significantly lower, at 3.38%, indicating that the model is highly effective in identifying the '0' class.
+
+```{r}
+plot(RF_model)
+```
+
+Conclusions above are also visible in the plot, where the black line represents the OOB error, the red dashed line the prediction error for salary \> 50k and the green dotted line the prediction error for salaries lower than 50k yearly. The error converges in less than 200 trees.
+
+#### RF_model2
+
+The second model shows an interesting shift in performance metrics. This model was built with 200 trees, used all rows of the training data for sampling (**`sampsize`**), tried eight variables at each split (**`mtry`**), and set a minimum node size of 100, with predictor importance measured.
+
+-   **Number of Trees**: Reduced from 1,000 to 200 which we know it impacts the model's robustness and generalization capability but improves computational efficiency; but we also know from previous model that it converges lower than 200 trees, so we don't need so many.
+
+-   **Variables at Each Split (`mtry`)**: Increased from 4 to 8, which could allow for more complex decision-making at each split but (**attention**!) may also increase the risk of overfitting.
+
+-   **Sample Size (`sampsize`)**: Using the entire dataset for creating each tree in the second model, as opposed to 50% in the first model, potentially increases the variance captured in each tree.
+
+-   **Node Size (`nodesize`)**: Increased to 100, aiming to simplify the model by creating larger, less complex terminal nodes, which might help in reducing overfitting (**attention**!)
+
+```{r}
+if(0) {
+  RF_model2 <- 
+  randomForest(formulaRF,
+               data = train_dataRF,
+               ntree = 200,
+               sampsize = nrow(train_dataRF),
+               mtry = 19,
+               # minimum number of obs in the terminal nodes
+               nodesize = 100,
+               # we also generate predictors importance measures,
+               importance = TRUE)
+}
+RF_model2 <- readRDS(here("output", "RF_model2.rds"))
+print(RF_model2)
+```
+
+The second model's adjustments did not lead us to an improvement in predictive performance. Instead, it slightly decreased the model's effectiveness, particularly for the '0' class, without addressing the high misclassification rate of the '1' class. This outcome could suggest that increasing **`mtry`** and the **`nodesize`**, along with using the full dataset for **`sampsize`**, does not necessarily translate to better performance for this specific classification problem.
+
+```{r}
+plot(RF_model2)
+```
+
+The error converges closer to 25 trees. Overall, we can see that it is very important to careful hyperparameter tune and possibly the need for a more targeted approach to address class imbalance or feature selection. In our next model we will be focusing on hyperparameter tuning through cross-validation to optimize performance.
+
+#### RF_model3
+
+This approach contrasts with the previous models as we employ a more systematic method to determine the best **`mtry`** parameter within a specified range (5 to 17), given the dataset has 19 predictors.
+
+```{r}
+if(0) {
+  # Cross validation to find better parameters:
+# We have 19 predictors, we can try between 5 and 17
+parameters_rf <- expand.grid(mtry = 5:17)
+ctrl_cv <- trainControl(method = "cv", number = 7)
+
+set.seed(101195)
+RF_model3 <- train(formulaRF,
+                   data = train_dataRF,
+                   method = "rf",
+                   ntree = 25,
+                   nodesize = 150,
+                   tuneGrid = parameters_rf,
+                   trControl = ctrl_cv,
+                   importance = TRUE)
+}
+RF_model3 <- readRDS(here("output", "RF_model3.rds"))
+print(RF_model3)
+```
+
+The **`mtry`** parameter was optimized through cross-validation, with the best performance achieved at **`mtry = 17`**.
+
+```{r}
+plot(RF_model3$results$mtry,
+     RF_model3$results$Accuracy, type = "b")
+```
+
+The cross-validation results show a peak accuracy of 85.63% and a Kappa of 0.5522 with **`mtry = 17`**, suggesting a substantial improvement in model performance compared to the OOB error rates discussed for the first two models. The Kappa statistic, indicates the degree of accuracy taking into account the chance agreement and also reflects a strong model performance.
+
+```{r}
+plot(RF_model3$results$mtry,
+     RF_model3$results$Kappa, type = "b")
+```
+
+With only 25 trees and a high **`mtry`**, this model appears to strike a balance between predictive accuracy and computational efficiency. The large **`nodesize`** further suggests an approach that favors more generalized, less overfitted models.
+
+```{r}
+plot(RF_model3)
+```
+
+Now let's compare our 3 models.
+
+#### Test & Predict : Comparison and results
+
+```{r}
+# our test data
+test_dataRF <- testr
+test_dataRF$salary_binary <- as.factor(test_dataRF$salary_binary)
+
+str(test_dataRF)
+```
+
+Now we generate predictions with our trained models to later make the comparisons.
+
+```{r, warning=FALSE}
+# RF_model
+pred_train_RF <- predict(RF_model, 
+                         train_dataRF, 
+                         type = "prob")[, "1"]
+ROC_trainRF  <- roc(as.numeric(train_dataRF$salary_binary == "1"), 
+                     pred_train_RF)
+pred_test_RF  <- predict(RF_model, 
+                         test_dataRF, 
+                         type = "prob")[, "1"]
+ROC_test_RF   <- roc(as.numeric(test_dataRF$salary_binary == "1"), 
+                     pred_test_RF)
+# RF_model2
+pred_train_RF2 <- predict(RF_model2, 
+                          train_dataRF, 
+                          type = "prob")[, "1"]
+ROC_trainRF2  <- roc(as.numeric(train_dataRF$salary_binary == "1"), 
+                     pred_train_RF2)
+pred_test_RF2  <- predict(RF_model2, 
+                          test_dataRF, 
+                          type = "prob")[, "1"]
+ROC_test_RF2   <- roc(as.numeric(test_dataRF$salary_binary == "1"), 
+                      pred_test_RF2)
+# RF_model3
+pred_train_RF3 <- predict(RF_model3, 
+                          train_dataRF, 
+                          type = "prob")[, "1"]
+ROC_trainRF3  <- roc(as.numeric(train_dataRF$salary_binary == "1"), 
+                     pred_train_RF3)
+pred_test_RF3  <- predict(RF_model3, 
+                          test_dataRF, 
+                          type = "prob")[, "1"]
+ROC_test_RF3   <- roc(as.numeric(test_dataRF$salary_binary == "1"), 
+                      pred_test_RF3)
+```
+
+Now we can compare the performance before we plot:
+
+```{r}
+getAccuracyAndGini(model = RF_model,
+                   data = train_dataRF,
+                   target_variable = "salary_binary",
+                   predicted_class = "1")
+```
+
+```{r}
+getAccuracyAndGini(model = RF_model2,
+                   data = train_dataRF,
+                   target_variable = "salary_binary",
+                   predicted_class = "1")
+```
+
+```{r}
+getAccuracyAndGini(model = RF_model3,
+                   data = train_dataRF,
+                   target_variable = "salary_binary",
+                   predicted_class = "1")
+```
+
+Taking a look only at the training results **the first model** stands out as the superior model across all evaluated metrics, showcasing exceptional accuracy, high sensitivity and specificity, and almost perfect discrimination ability. We could say that it is highly capable of both identifying the positive cases and avoiding false positives, making it the most reliable choice for scenarios where both precision and recall are critical.
+
+**Model 2 and Model 3** show a decline in performance across all metrics compared to Model 1. The significant drop in sensitivity for these models suggests they are less effective at correctly identifying people with yearly salaries higher than 50k. With the Gini Coefficient we can closely combine the trends observed in the accuracy, sensitivity, and specificity, as it describes the model's ability to discriminate between classes; the higher the Gini coefficient, the better the model is at making this distinction.
+
+But remember, this is only on the training data!! Bigger conclusions should always be based on the comparison of performance in training and testing together.
+
+Now let's check for testing:
+
+```{r}
+getAccuracyAndGini(model = RF_model,
+                   data = test_dataRF,
+                   target_variable = "salary_binary",
+                   predicted_class = "1")
+```
+
+```{r}
+getAccuracyAndGini(model = RF_model2,
+                   data = test_dataRF,
+                   target_variable = "salary_binary",
+                   predicted_class = "1")
+```
+
+```{r}
+getAccuracyAndGini(model = RF_model3,
+                   data = test_dataRF,
+                   target_variable = "salary_binary",
+                   predicted_class = "1")
+```
+
+**Model 1:**
+
+-   **Training**: Accuracy (97.30%), Sensitivity (89.16%), Specificity (99.89%), Gini (99.92%)
+
+-   **Testing**: Accuracy (86.67%), Sensitivity (55.31%), Specificity (96.63%), Gini (81.47%)
+
+Shows a significant drop in performance from training to testing, especially in Accuracy (from 97.30% to 86.67%) and Sensitivity (from 89.16% to 55.31%). This indicates a potential over-fitting issue, as the model performs exceptionally well on the training data but is not able to generalize similarly on new/unseen data.
+
+**Model 2:**
+
+-   **Training**: Accuracy (88.55%), Sensitivity (62.05%), Specificity (96.96%), Gini (89.98%)
+
+-   **Testing**: Accuracy (86.04%), Sensitivity (55.07%), Specificity (95.88%), Gini (79.46%)
+
+Experiences a slight decrease in performance metrics from training to testing but shows a relatively smaller gap compared to Model 1, particularly maintaining a stable Specificity (from 96.96% to 95.88%) and a modest drop in Gini coefficient.
+
+**Model 3:**
+
+-   **Training**: Accuracy (86.81%), Sensitivity (55.69%), Specificity (96.70%), Gini (82.31%)
+
+-   **Testing**: Accuracy (85.90%), Sensitivity (53.61%), Specificity (96.16%), Gini (75.22%)
+
+Finally, model 3 shows the smallest difference in performance between training and testing. Its metrics, particularly Accuracy and Sensitivity, are closest to each other across the two datasets. Although its overall metrics are not the highest, the consistency suggests better generalization. This can also be seen in the plot below, where the both red lines, representing model3, are the ones closer to each other in comparison to the other models.
+
+```{r}
+RF_results <- 
+  list(
+    ROC_trainRF = ROC_trainRF,
+    ROC_test_RF = ROC_test_RF,
+    ROC_trainRF2 = ROC_trainRF2,
+    ROC_test_RF2 = ROC_test_RF2,
+    ROC_trainRF3 = ROC_trainRF3,
+    ROC_test_RF3 = ROC_test_RF3
+  ) %>%
+    pROC::ggroc(alpha = 0.5, linetype = 1, size = 1) + 
+    geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), 
+                 color = "grey", 
+                 linetype = "dashed") +
+    labs(title = paste0("Gini TEST: ",
+                        "RF_model = ", 
+                        round(100 * (2 * auc(ROC_test_RF) - 1), 1), "%, ",
+                        "RF_model2 = ", 
+                        round(100 * (2 * auc(ROC_test_RF2) - 1), 1), "%, ",
+                        "RF_model3 = ",
+                        round(100 * (2 * auc(ROC_test_RF3) - 1), 1), "%, "),
+  
+         subtitle =  paste0("Gini TRAIN: ",
+                            "RF_model = ", 
+                            round(100 * (2 * auc(ROC_trainRF) - 1), 1), "%, ",
+                            "RF_model2 = ", 
+                            round(100 * (2 * auc(ROC_trainRF2) - 1), 1), "%, ",
+                            "RF_model3 = ", 
+                            round(100 * (2 * auc(ROC_trainRF3) - 1), 1), "%, ")) +
+    theme_bw() + coord_fixed() +
+    scale_color_brewer(palette = "Paired")
+print(RF_results)
+```
+
+For Random Forest, the model 3 is our winner!
+
+### XGBoost
+
+```{r}
+library(caret)
+library(xgboost)
+library(doParallel)
+library(foreach)
+train_XGB <- trainr
+train_XGB <- subset(train_XGB, select = -id)
+
+train_XGB$salary_binary <- factor(train_XGB$salary_binary,
+                                  levels = c("1", "0"),
+                                  labels = c("Positive", "Negative"))
+```
+
+For XGBoost we also start with the formula definition, same as in Random Forest:
+
+```{r}
+## Formula
+response_variable <- "salary_binary"
+predictor_columns <- setdiff(names(train_XGB), c(response_variable))
+formulaXGB <- as.formula(paste(response_variable, "~", paste(predictor_columns, collapse = " + ")))
+```
+
+#### XGB1
+
+As lesson learned from Ramdon Forest, we start with hyperparameter tuning :). Here we use grid search to identify the optimal set of hyperparameters for the XGBoost model. The search space for the first model was as follows:
+
+-   **nrounds**: Number of boosting rounds (iterations), tested from 20 to 120 in steps of 20.
+
+-   **max_depth**: Maximum depth of a tree, tested from 8 to 16 in steps of 2, to control the model's complexity.
+
+-   **eta**: Learning rate, fixed at 0.25, to control the contribution of each tree to the final prediction.
+
+-   **gamma**: Minimum loss reduction required to make a further partition on a leaf node, set to 1.
+
+-   **colsample_bytree**: Fraction of features used per tree, tested from 0.1 to 0.8 in steps of 0.1.
+
+-   **min_child_weight**: Minimum sum of instance weight needed in a child, tested from 50 to 300 in steps of 50.
+
+-   **subsample**: Subsample ratio of the training instances, set to 0.8.
+
+```{r}
+# hyperparameters definition
+parameters_xgb <- expand.grid(nrounds = seq(20, 120, 20),
+                              max_depth = seq(8, 16, 2),
+                              eta = c(0.25), 
+                              gamma = 1,
+                              colsample_bytree = seq(0.1, 0.8, 0.1),
+                              min_child_weight = seq(50, 300, 50),
+                              subsample = 0.8)
+
+ctrl_cv3 <- trainControl(method = "cv", 
+                         number = 3,
+                         classProbs = TRUE,
+                         summaryFunction = twoClassSummary)
+```
+
+And cross-validation with three folds was also used to evaluate the model's performance across different hyperparameter combinations, that way we make sure to select the best performing model while trying to prevent overfitting.
+
+```{r}
+# due to running time, we will not run all models again here, but we will use the saved models
+if (0) {
+  XGB1 <- caret::train(formulaXGB,
+                     data = train_XGB,
+                     method = "xgbTree",
+                     trControl = ctrl_cv3,
+                     tuneGrid  = parameters_xgb)
+
+}
+XGB1 <- readRDS(here("output", "XBG1.rds"))
+XGB1
+```
+
+The optimal hyperparameters selected for the final model were `nrounds` = 40, `max_depth` = 8, `eta` = 0.25, `gamma` = 1, `colsample_bytree` = 0.6, `min_child_weight` = 50, `subsample` = 0.8.
+
+#### XGB2
+
+Since we found the optimal hyperparameters from first model, we want to narrow the grid search in some of them and expand the horizon for some others. In this case, we will narrow nrounds as we saw that optimal was on 40; same reasoning with colsample_bytree and min_child_weight. We will expand the search for max_depth as it stayed in the lower bound; that way we will check if there's a better performance for lower number. And finally we will explore with different values for the subsample, as in previous model it was constant.
+
+```{r}
+if(0) {
+  parameters_xgb2 <- expand.grid(nrounds = seq(20, 80, 20),
+                              max_depth = seq(4, 10, 2),
+                              eta = c(0.25), 
+                              gamma = 1,
+                              colsample_bytree = seq(0.3, 0.9, 0.1),
+                              min_child_weight = seq(20, 200, 20),
+                              subsample = c(0.6, 0.7, 0.8))
+XGB2 <- caret::train(formulaXGB,
+                     data = train_XGB,
+                     method = "xgbTree",
+                     trControl = ctrl_cv3,
+                     tuneGrid  = parameters_xgb2)
+}
+XGB2 <- readRDS(here("output", "XBG2.rds"))
+XGB2
+
+```
+
+In this case, the optimal hyper-parameters selected for the final model were `nrounds` = 80 (higher than before; which can improve accuracy as it allows more trees to contribute to the final prediction, but it also can create the risk of over-fitting), `max_depth` = 4 (lower than before, which suggests a move towards a more generalizable model by limiting the complexity of individual trees), `eta` = 0.25, `gamma` = 1, `colsample_bytree` = 0.3 (lower than before, means that a smaller fraction of features is used to build each tree. This change could improve the model robustness by preventing "over-reliance" on specific features and encouraging diversity among the trees), `min_child_weight` = 20 (lower than before, it can make the algorithm more sensitive to splits that involve fewer samples, potentially allowing for more complex models by allowing more splits that classify a small number of observations), `subsample` = 0.8 (same as before).
+
+#### XGB3
+
+For the third model, we will take optimal parameters from XGB2 but still try one more time with wider range of `subsample`:
+
+```{r}
+if (0) {
+  # third model
+parameters_xgb3 <- expand.grid(nrounds = 80,
+                               max_depth = 4,
+                               eta = 0.25, 
+                               gamma = 1,
+                               colsample_bytree = 0.3,
+                               min_child_weight = 20,
+                               subsample = c(0.6, 0.7, 0.75, 0.8, 0.85, 0.9))
+XGB3 <- caret::train(formulaXGB,
+                     data = train_XGB,
+                     method = "xgbTree",
+                     trControl = ctrl_cv3,
+                     tuneGrid  = parameters_xgb3)
+}
+XGB3 <- readRDS(here("output", "XBG3.rds"))
+XGB3
+```
+
+We find that still best parameter for `subsample` is 0.8. Now we will focus on improving the learning rate. The next two models will be increasing the number of trees `nrounds` and reducing the `eta` (learning rate).
+
+#### XGB4
+
+Here we double the trees and half the eta:
+
+```{r}
+if (0) {
+  parameters_xgb4 <- expand.grid(nrounds = 160,
+                               max_depth = 4,
+                               eta = 0.12, 
+                               gamma = 1,
+                               colsample_bytree = 0.3,
+                               min_child_weight = 20,
+                               subsample = c(0.9))
+XGB4 <- caret::train(formulaXGB,
+                     data = train_XGB,
+                     method = "xgbTree",
+                     trControl = ctrl_cv3,
+                     tuneGrid  = parameters_xgb4)
+}
+XGB4 <- readRDS(here("output", "XBG4.rds"))
+XGB4
+```
+
+#### XGB5
+
+Once more, double `nrounds`, half `eta`:
+
+```{r}
+if(0) {
+  parameters_xgb5 <- expand.grid(nrounds = 320,
+                               max_depth = 4,
+                               eta = 0.06, 
+                               gamma = 1,
+                               colsample_bytree = 0.3,
+                               min_child_weight = 20,
+                               subsample = c(0.9))
+XGB5 <- caret::train(formulaXGB,
+                     data = train_XGB,
+                     method = "xgbTree",
+                     trControl = ctrl_cv3,
+                     tuneGrid  = parameters_xgb5)
+}
+XGB5 <- readRDS(here("output", "XBG5.rds"))
+XGB5
+```
+
+Now we will compare the performance and results among the 5 XGBoost models.
+
+#### Test & Predict: Comparison and results
+
+Training results:
+
+```{r}
+models <- c("1":"5")
+results_trainXGB <- sapply(paste0("XGB", models),
+                           function(x) getAccuracyAndGini(model = get(x),
+                                                          data = train_XGB,
+                                                          target_variable = "salary_binary",
+                                                          predicted_class = "Positive")
+)
+print(results_trainXGB)
+```
+
+Test Results:
+
+```{r}
+test_XGB <- testr
+test_XGB$salary_binary <- factor(test_XGB$salary_binary,
+                                  levels = c("1", "0"),
+                                  labels = c("Positive", "Negative"))
+results_testXGB <- sapply(paste0("XGB", models),
+                          function(x) getAccuracyAndGini(model = get(x),
+                                                         data = test_XGB,
+                                                         target_variable = "salary_binary",
+                                                         predicted_class = "Positive")
+)
+print(results_testXGB)
+```
+
+Similarly as before, when comparing the training and testing performance of the five XGBoost models (XGB1 through XGB5), our goal is to identify the model that not only performs well but also shows consistency between training and testing. This consistency is crucial for ensuring the model's generalizability to unseen data. From the results we can compare and see that:
+
+**XGB1** shows high consistency between training and testing across all metrics, indicating good generalization. The difference in accuracy is minimal, and it has the highest sensitivity in testing among all models.
+
+**XGB2 and XGB3** have identical metrics in training and testing, showing stability. However, their performance drops slightly in testing compared to XGB1, particularly in sensitivity.
+
+**XGB4**\'s metrics are slightly better in training compared to XGB2 and XGB3 but show a marginal decrease in testing, especially in sensitivity.
+
+**XGB5** experiences the most significant drop in performance from training to testing, particularly in accuracy and sensitivity, suggesting it might not generalize as well as the others.
+
+We conclude that XGB1 emerges as our preferred model based on our established criteria. It showcases the smallest disparity in performance between training and testing phases, indicating robust generalization capabilities. Furthermore, its sensitivity in the testing phase is the highest among all the models we evaluated, which is critical for accurately predicting the positive class. Although its accuracy during training is not the highest, the consistency it maintains across all metrics and the minimal drop in performance during testing render it the most reliable choice for real-world applications.
+
+We observe that XGB2 and XGB3 maintain stability, yet they slightly underperform in the testing phase compared to XGB1. On the other hand, XGB4 and XGB5 exhibit signs of over-fitting, with a noticeable decrease in testing performance, particularly XGB5, which experiences the most significant decline, rendering them less desirable for practical use.
+
+XGB1 is the winner here!
+
+### Neural Networks
+
+```{r}
+set.seed(101195)
+library(tidyverse)
+library(caret)
+library(neuralnet)
+library(pROC)
+library(here)
+library(keras)
+library(tensorflow)
+```
+
+As mentioned before, for Neural Networks is important to have scaled data and proper labels of the variables as the model might not run properly if our data has different ranges and not proper labels. It is also important to encode all our categorical variables. For our data set, we performed the following steps to reach the desired output:
+
+```{r}
+train_dataNN <- scaled_trainr
+test_dataNN <- scaled_testr
+# we need to define the model formula:
+predictor_columns <- setdiff(names(train_dataNN), c("id", "salary_binary"))
+formulaNN <- as.formula(paste("salary_binary", "~", paste(predictor_columns, collapse = " + ")))
+```
+
+```{r}
+# encoding categorical variables
+train_dataNN_mtx <- model.matrix(object = formulaNN, data = train_dataNN)
+# check dimensions
+dim(train_dataNN_mtx)
+```
+
+```{r}
+#manually correct colnames
+colnames(train_dataNN_mtx) <- gsub(" ", "_",  colnames(train_dataNN_mtx))
+colnames(train_dataNN_mtx) <- gsub(",", "_",  colnames(train_dataNN_mtx))
+colnames(train_dataNN_mtx) <- gsub("/", "",   colnames(train_dataNN_mtx))
+colnames(train_dataNN_mtx) <- gsub("-", "_",  colnames(train_dataNN_mtx))
+colnames(train_dataNN_mtx) <- gsub("'", "",   colnames(train_dataNN_mtx))
+colnames(train_dataNN_mtx) <- gsub("\\+", "", colnames(train_dataNN_mtx))
+colnames(train_dataNN_mtx) <- gsub("\\^", "", colnames(train_dataNN_mtx))
+colnames(train_dataNN_mtx)
+#final results
+col_list <- paste(c(colnames(train_dataNN_mtx[, -1])), collapse = "+")
+col_list <- paste(c("salary_binary_1 ~ ", col_list), collapse = "")
+(FormulaNN_2 <- formula(col_list))
+```
+
+When it comes to the architecture decision of our model, the criteria selected involved the following reasoning:
+
+-   **Hidden Layers Configuration**: The model uses a two-layer `hidden` structure with 5 neurons in the first layer and 3 in the second. We believe this architecture is complex enough to capture nonlinear relationships in the data but not so complex that it would be prone to overfitting. It strikes a balance between learning the underlying patterns in the dataset and maintaining generalization capabilities to unseen data.
+
+-   **Linear Output**: The choice of **`linear.output = FALSE`** is appropriate for a classification task. This setup helps in distinguishing between the two classes by providing outputs that can be interpreted as probabilities of belonging to one of the classes. If you choose True, then it would be a set up for regression task.
+
+-   **Learning Rate Adaptation**: The model's learning rate adaptation, with no set limit (`NULL`) and a factor for increasing or decreasing the learning rate (**`learningrate.factor`**), allows for dynamic adjustment during training. This adaptability helps in fine-tuning the learning process, potentially leading to better and more stable convergence over iterations. The factor controls how the step size is updated across iterations. The factors **`minus`** and **`plus`** are used to decrease or increase the step size, respectively, based on the change in the sign of the gradient for each weight.
+
+-   **Stepmax and Threshold**: Setting a high **`stepmax`** (1e7) ensures the model has sufficient iterations to learn from the data, while the **`threshold`** for stopping (0.01) is a reasonable choice to prevent overfitting by stopping the training when improvements become minimal.
+
+```{r}
+if (0) {
+  # training the model:
+NN_model1 <- 
+  data.frame(train_dataNN_mtx,
+             salary_binary_1 = as.numeric(train_dataNN$salary_binary == "1")) %>%
+  sample_n(1000) %>%
+  neuralnet(FormulaNN_2,
+            data = data.frame(train_dataNN_mtx,
+                              salary_binary_1 = as.numeric(train_dataNN$salary_binary == "1")),
+            hidden = c(5, 3), # number of neurons in hidden layers
+            linear.output = FALSE, # T for regression, F for classification
+            stepmax = 1e7,
+            rep = 2,
+            learningrate.limit = NULL,
+            learningrate.factor = list(minus = 0.5, plus = 1.2),
+            algorithm = "rprop+",
+            threshold = 0.01)
+}
+NN_model1 <- readRDS(here("output", "NN_model1.rds"))
+NN_model1$result.matrix
+```
+
+The result matrix provides an overview of the neural network's training outcome, including the error rates, threshold reached, number of steps, and the weights for connections between the input, hidden, and output layers. The reported error rates (**`0.002925213`**, **`0.0047910852`**) indicate that the neural network has achieved a high degree of accuracy in fitting the training data. Low error rates suggest that the model is capable of capturing the underlying patterns in the data, which is crucial for making accurate predictions.
+
+The model also has reached a threshold (**`0.005848001`**, **`0.0095770871`**) with a relatively small number of steps (**`22`**, **`20`**) indicates efficient training convergence. It could mean that the model quickly found a stable set of weights that minimize the prediction error, which can indicate a well-configured learning process.
+
+The weights assigned to different features (**`Intercept.to.1layhid1`**, **`capital.gain.to.1layhid1`**, etc.) reflect the importance and influence of each input variable on the model's predictions. For example, we can see significant weights for features like **`native.countryCanada.to.1layhid1`**, **`native.countryColumbia.to.1layhid1`**, or **`occupationProtective_serv.to.1layhid1`** indicate these variables play a meaningful role in determining whether someone will earn more or less thna 50k a year.
+
+```{r}
+# the architecture of our network
+plot(NN_model1, rep = "best")
+```
+
+The lack of interpretability is a significant drawback for us when we need to explain the model's predictions, understand the reasoning behind its decisions, or justify those decisions. If we are talking about salaries and want to rely on the network, is hard to justify or align with the model's decision if it's not a completely understandable process, especially when it comes to stakeholders inside any organization.
+
+For example, NN learn patterns from the training data they are given and if the training data contains biases (e.g., historical salary data that reflects gender or racial pay gaps, as we mentioned initially), the model may learn and perpetuate these biases. It could even learn that people from under-developed countries should earn lower salaries. In this context, we considered it was important to mention these drawbacks.
+
+#### Test & Predict: Comparison and results
+
+```{r}
+test_dataNN_mtx <- model.matrix(object = formulaNN, data = test_dataNN)
+
+dim(test_dataNN_mtx)
+
+# check column names
+colnames(test_dataNN_mtx)
+
+#manually correct colnames
+colnames(test_dataNN_mtx) <- gsub(" ", "_",  colnames(test_dataNN_mtx))
+colnames(test_dataNN_mtx) <- gsub(",", "_",  colnames(test_dataNN_mtx))
+colnames(test_dataNN_mtx) <- gsub("/", "",   colnames(test_dataNN_mtx))
+colnames(test_dataNN_mtx) <- gsub("-", "_",  colnames(test_dataNN_mtx))
+colnames(test_dataNN_mtx) <- gsub("'", "",   colnames(test_dataNN_mtx))
+colnames(test_dataNN_mtx) <- gsub("\\+", "", colnames(test_dataNN_mtx))
+colnames(test_dataNN_mtx) <- gsub("\\^", "", colnames(test_dataNN_mtx))
+colnames(test_dataNN_mtx)
+
+df2 <-data.frame(test_dataNN_mtx[, -1], 
+                 salary_binary_1 = as.numeric(test_dataNN$salary_binary == "1"))
+```
+
+Now we generate the predictions:
+
+```{r}
+pred_NN_model1 <- compute(NN_model1, df2)
+pred_NN_model1$net.result %>% head(10)
+```
+
+```{r, warning=FALSE}
+(CM_NN_model1 <-
+    confusionMatrix(as.numeric((pred_NN_model1$net.result > 0.5)) %>% as.factor(),
+                    as.factor(ifelse(test_dataNN$salary_binary == "1", 1, 0))) )
+```
+
+And ROC curve:\
+
+```{r, warning=FALSE}
+# ROC curves
+ROC_train_NN1 <- 
+  pROC::roc(as.numeric(train_dataNN$salary_binary == "1"), 
+            compute(NN_model1, train_dataNN_mtx)$net.result[, 1])
+ROC_test_NN1  <- 
+  pROC::roc(as.numeric(test_dataNN$salary_binary == "1"), 
+            compute(NN_model1, df2)$net.result[, 1])
+
+NN_Results <- list(
+  ROC_train_NN1 = ROC_train_NN1,
+  ROC_test_NN1  = ROC_test_NN1
+) %>%
+  pROC::ggroc(alpha = 0.5, linetype = 1, size = 1) + 
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), 
+               color = "grey", 
+               linetype = "dashed") +
+  labs(subtitle = paste0("Gini TRAIN: ",
+                         "nn = ", 
+                         round(100*(2 * auc(ROC_train_NN1) - 1), 1), "%, ",
+                         "Gini TEST: ",
+                         "nn = ", 
+                         round(100*(2 * auc(ROC_test_NN1) - 1), 1), "%, "
+  )) +
+  theme_bw() + coord_fixed() +
+  scale_color_brewer(palette = "Paired")
+
+print(NN_Results)
+```
+
+As you can see, the results are quite poor, despite that the model took significant time running. For the purpose of this project, it was quite interesting to try the Neural Networks approach, but we quickly realized that for the depth of our task and the size of our data, the Neural networks might not be the best option since we have other models that perform much better and have higher interpretability and hyperparameter tuning without consuming so much computational resources.
+
+## General conclusions & learning outcomes
+
+Our analysis suggests that XGB1 outperformed Random Forest3 due to a combination of factors. The model XGB1 demonstrated a more consistent performance between training and testing datasets, also the XGBoost algorithm often has better execution times and predictive performance due to its gradient boosting framework, which builds trees one at a time, where each new tree helps to correct errors made by previously trained trees.
+
+However, our neural network model did not yield satisfactory results and proved time-consuming in its execution. For the future and after this task, to improve neural network performance, we would suggest the following:
+
+-   Architecture Tuning: Experiment with different architectures by adjusting the number of hidden layers and neurons to find the most suitable structure for the data-set.
+
+-   Regularization: Implement regularization techniques such as dropout or L1/L2 regularization to prevent overfitting.
+
+-   Hyperparameter Optimization: Use methods like grid search or random search to fine-tune hyperparameters such as the learning rate, batch size, and epochs.
+
+-   Feature Selection: Reduce dimensionality through feature selection or extraction to focus on the most relevant inputs for the prediction task (dimension reduction algorithms).
+
+-   Training Techniques: Utilize advanced training techniques like batch normalization or learning rate schedules to improve training dynamics. Upsampling and downsampling could be used but with the remark of being careful not to bias the model.
+
+Despite these potential improvements, it's crucial to note that for tasks like salary prediction, which is a sensitive topic, interpretability and understandability of the model are as important as its performance. Models such as Random Forests or XGBoost can offer some level of interpretability through feature importances and partial dependence plots, which is a significant advantage.
+
+In our exploration, we learned valuable lessons. We observed that the choice of hyperparameters plays a critical role in the performance of machine learning models. For instance, in our Random Forest models, the choice of \`mtry\`, \`ntree\`, and \`nodesize\` influenced the model's ability to learn from the data without overfitting.
+
+In conclusion, while neural networks have the potential to capture complex patterns in data, for applications where transparency and interpretability are of the essence, tree-based methods like XGBoost and Random Forests may be more appropriate. They not only provide competitive accuracy but also offer insights into the decision-making process, allowing for accountability and fairness in **salary predictions**; while showing significant better performance. With NN you could also achieve the same results after implements some of the improvements mentioned above but there is still the question of interpretation and full understanding of what happens in the network.
+
+Special thanks to Professor Paweł Sakowski from the University of Warsaw for not only giving us the tools and content but also the dedication and understanding of the models and the opportunity to test them ourselves! Is a valuable knowledge in the beginning of our Data Science journey!
